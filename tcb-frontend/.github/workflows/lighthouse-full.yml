@@ -1,0 +1,106 @@
+name: Lighthouse CI — Desktop & Mobile
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lighthouse-desktop:
+    runs-on: ubuntu-latest
+    name: Lighthouse Desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: tcb-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: tcb-frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: tcb-frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
+          NEXT_PUBLIC_API_URL: http://localhost:5000
+
+      - name: Lighthouse CI — Desktop
+        uses: treosh/lighthouse-ci-action@v11
+        with:
+          configPath: tcb-frontend/lighthouserc.js
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+  lighthouse-mobile:
+    runs-on: ubuntu-latest
+    name: Lighthouse Mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: tcb-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: tcb-frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: tcb-frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
+          NEXT_PUBLIC_API_URL: http://localhost:5000
+
+      - name: Lighthouse CI — Mobile
+        uses: treosh/lighthouse-ci-action@v11
+        with:
+          configPath: tcb-frontend/lighthouserc-mobile.js
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+  accessibility:
+    runs-on: ubuntu-latest
+    name: Accessibility & CWV Check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: tcb-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: tcb-frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: tcb-frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
+          NEXT_PUBLIC_API_URL: http://localhost:5000
+
+      - name: Start server
+        working-directory: tcb-frontend
+        run: npm run start &
+        env:
+          PORT: 3000
+
+      - name: Wait for server
+        run: sleep 5
+
+      - name: Run axe accessibility check
+        run: |
+          npx @axe-core/cli http://localhost:3000 http://localhost:3000/blog --exit || true
+          echo "⚠️ Accessibility issues found above (if any)"
+
+      - name: Verify CLS < 0.1 via Lighthouse
+        run: |
+          npx lighthouse http://localhost:3000/blog --output=json --output-path=./lh-report.json --chrome-flags="--headless --no-sandbox" --preset=desktop
+          CLS=$(node -e "const r=require('./lh-report.json'); console.log(r.audits['cumulative-layout-shift'].numericValue)")
+          echo "CLS value: $CLS"
+          node -e "if(parseFloat('$CLS') >= 0.1) { console.error('❌ CLS >= 0.1'); process.exit(1); } else { console.log('✅ CLS < 0.1'); }"

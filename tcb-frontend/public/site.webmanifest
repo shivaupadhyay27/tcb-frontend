@@ -1,0 +1,9 @@
+{
+  "name": "The Corporate Blog",
+  "short_name": "TCB",
+  "icons": [],
+  "theme_color": "#0f62be",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "start_url": "/"
+}

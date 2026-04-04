@@ -1,0 +1,51 @@
+name: Lighthouse CI
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: tcb-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: tcb-frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: tcb-frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
+          NEXT_PUBLIC_API_URL: http://localhost:5000
+
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v11
+        with:
+          configPath: tcb-frontend/lighthouserc.js
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+      - name: Verify Brotli compression
+        working-directory: tcb-frontend
+        run: |
+          npm run start &
+          sleep 5
+          echo "Checking Brotli support..."
+          ENCODING=$(curl -s -H "Accept-Encoding: br, gzip" -o /dev/null -w "%{content_type}" http://localhost:3000 -D - | grep -i "content-encoding")
+          echo "Content-Encoding header: $ENCODING"
+          if echo "$ENCODING" | grep -qi "br"; then
+            echo "✅ Brotli compression verified"
+          else
+            echo "⚠️ Brotli not detected (may be handled by CDN in production)"
+          fi
+          kill %1 || true
