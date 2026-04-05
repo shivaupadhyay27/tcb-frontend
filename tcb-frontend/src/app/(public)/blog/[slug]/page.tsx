@@ -15,10 +15,15 @@ import { RelatedPosts } from '@/components/blog/RelatedPosts';
 import { BlockDocument } from '@/types/block.types';
 
 export const revalidate = 900;
+export const dynamicParams = true;
 
 export async function generateStaticParams() {
-  const slugs = await getAllPublishedSlugs();
-  return slugs.map((slug) => ({ slug }));
+  try {
+    const slugs = await getAllPublishedSlugs();
+    return slugs.map((slug) => ({ slug }));
+  } catch {
+    return [];
+  }
 }
 
 interface PageProps {
@@ -27,55 +32,67 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const post = await getPostBySlug(slug);
+  try {
+    const post = await getPostBySlug(slug);
+    if (!post) return { title: 'Post Not Found' };
 
-  if (!post) return { title: 'Post Not Found' };
+    const title = post.metaTitle || post.title;
+    const description = post.metaDesc || post.excerpt || '';
+    const url = `${SEO_CONFIG.siteUrl}/blog/${post.slug}`;
+    const image = post.ogImage || SEO_CONFIG.defaultOgImage;
+    const fullImage = image.startsWith('http') ? image : `${SEO_CONFIG.siteUrl}${image}`;
 
-  const title = post.metaTitle || post.title;
-  const description = post.metaDesc || post.excerpt || '';
-  const url = `${SEO_CONFIG.siteUrl}/blog/${post.slug}`;
-  const image = post.ogImage || SEO_CONFIG.defaultOgImage;
-  const fullImage = image.startsWith('http') ? image : `${SEO_CONFIG.siteUrl}${image}`;
-
-  return {
-    title: `${title} | ${SEO_CONFIG.siteName}`,
-    description,
-    authors: [{ name: post.author.name }],
-    keywords: post.categories.map((c) => c.name),
-    alternates: { canonical: post.canonicalUrl || url },
-    robots: { index: true, follow: true, googleBot: { index: true, follow: true, 'max-video-preview': -1, 'max-image-preview': 'large' as const, 'max-snippet': -1 } },
-    openGraph: {
-      title: post.ogTitle || title, description: post.ogDesc || description, url,
-      siteName: SEO_CONFIG.siteName, locale: SEO_CONFIG.locale, type: 'article',
-      publishedTime: post.publishedAt || undefined, modifiedTime: post.updatedAt,
-      authors: [post.author.name],
-      images: [{ url: fullImage, width: 1200, height: 630, alt: post.ogTitle || title }],
-    },
-    twitter: {
-      card: 'summary_large_image', title: post.twitterTitle || title,
-      description: post.twitterDesc || description,
-      images: [post.twitterImage || fullImage],
-      site: SEO_CONFIG.twitterHandle, creator: `@${post.author.slug}`,
-    },
-  };
+    return {
+      title: `${title} | ${SEO_CONFIG.siteName}`,
+      description,
+      authors: [{ name: post.author.name }],
+      keywords: post.categories.map((c) => c.name),
+      alternates: { canonical: post.canonicalUrl || url },
+      robots: { index: true, follow: true, googleBot: { index: true, follow: true, 'max-video-preview': -1, 'max-image-preview': 'large' as const, 'max-snippet': -1 } },
+      openGraph: {
+        title: post.ogTitle || title, description: post.ogDesc || description, url,
+        siteName: SEO_CONFIG.siteName, locale: SEO_CONFIG.locale, type: 'article',
+        publishedTime: post.publishedAt || undefined, modifiedTime: post.updatedAt,
+        authors: [post.author.name],
+        images: [{ url: fullImage, width: 1200, height: 630, alt: post.ogTitle || title }],
+      },
+      twitter: {
+        card: 'summary_large_image', title: post.twitterTitle || title,
+        description: post.twitterDesc || description,
+        images: [post.twitterImage || fullImage],
+        site: SEO_CONFIG.twitterHandle, creator: `@${post.author.slug}`,
+      },
+    };
+  } catch {
+    return { title: 'Post Not Found' };
+  }
 }
 
 export default async function BlogPostPage({ params }: PageProps) {
   const { slug } = await params;
-  const post = await getPostBySlug(slug);
+  
+  let post;
+  try {
+    post = await getPostBySlug(slug);
+  } catch {
+    notFound();
+  }
 
   if (!post || post.status !== 'PUBLISHED') {
     notFound();
   }
 
-  // Parse content
   let document: BlockDocument | null = null;
   try { document = JSON.parse(post.content) as BlockDocument; } catch { document = null; }
 
   const tocItems = document ? generateTableOfContents(document) : [];
 
-  // Fetch related posts (shared categories)
-  const relatedPosts = await getRelatedPosts(post.id, 4);
+  let relatedPosts = [];
+  try {
+    relatedPosts = await getRelatedPosts(post.id, 4);
+  } catch {
+    relatedPosts = [];
+  }
 
   const breadcrumbs = [
     { name: 'Home', url: SEO_CONFIG.siteUrl },
@@ -92,7 +109,6 @@ export default async function BlogPostPage({ params }: PageProps) {
       <BreadcrumbJsonLd items={breadcrumbs} />
 
       <article className="container-content py-16">
-        {/* Breadcrumb */}
         <nav aria-label="Breadcrumb" className="mb-8">
           <ol className="flex flex-wrap items-center gap-1.5 text-sm text-slate-400">
             <li><Link href="/" className="hover:text-slate-600 dark:hover:text-slate-300">Home</Link></li>
@@ -109,7 +125,6 @@ export default async function BlogPostPage({ params }: PageProps) {
           </ol>
         </nav>
 
-        {/* Header */}
         <header className="mb-10">
           <div className="flex flex-wrap gap-2 mb-4">
             {post.categories.map((cat) => (
@@ -143,24 +158,20 @@ export default async function BlogPostPage({ params }: PageProps) {
           </div>
         </header>
 
-        {/* Featured image — LCP */}
         {post.ogImage && (
           <div className="relative mb-10 aspect-[16/9] overflow-hidden rounded-xl">
             <Image src={post.ogImage} alt={post.ogTitle || post.title} fill sizes="(max-width: 680px) 100vw, 680px" className="object-cover" priority fetchPriority="high" />
           </div>
         )}
 
-        {/* Table of Contents */}
         <TableOfContents items={tocItems} />
 
-        {/* Content — XSS-safe block renderer (no dangerouslySetInnerHTML on user content) */}
         {document ? (
           <DocumentRenderer document={document} />
         ) : (
           <div className="prose-blog"><p>{post.content}</p></div>
         )}
 
-        {/* Author footer */}
         <footer className="mt-16 border-t border-surface-border pt-8 dark:border-dark-border">
           <Link href={`/blog/author/${post.author.slug}`} className="flex items-center gap-4 group">
             {post.author.avatarUrl && (
@@ -173,7 +184,6 @@ export default async function BlogPostPage({ params }: PageProps) {
           </Link>
         </footer>
 
-        {/* Related Posts — improves internal link depth */}
         <RelatedPosts posts={relatedPosts} />
       </article>
     </>
