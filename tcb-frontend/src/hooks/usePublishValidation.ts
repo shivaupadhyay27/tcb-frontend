@@ -10,33 +10,29 @@ export interface PublishValidationError {
 }
 
 const MAX_IMAGE_DIMENSION = 4096;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 
 export function usePublishValidation(state: EditorState) {
   const errors = useMemo<PublishValidationError[]>(() => {
     const errs: PublishValidationError[] = [];
 
-    // Required: Title
     if (!state.title || state.title.trim().length < 5) {
       errs.push({ field: 'title', message: 'Title is required (min 5 characters)' });
     }
 
-    // Required: Slug
     if (!state.slug.value || state.slug.value.trim().length < 3) {
       errs.push({ field: 'slug', message: 'Slug is required (min 3 characters)' });
     }
 
-    // Required: Banner image (ogImage)
     if (!state.seo.ogImage) {
       errs.push({ field: 'ogImage', message: 'Banner image (OG image) is required' });
     }
 
-    // Required: Meta description OR excerpt
     if (!state.seo.metaDesc && !state.seo.ogDesc) {
       errs.push({ field: 'metaDesc', message: 'Meta description or excerpt is required' });
     }
 
-    // Content check
     const hasContent = state.document.blocks.some((b) => {
       if (b.type === 'paragraph') return b.content.some((n) => n.text.trim());
       if (b.type === 'heading') return b.content.some((n) => n.text.trim());
@@ -46,7 +42,6 @@ export function usePublishValidation(state: EditorState) {
       errs.push({ field: 'content', message: 'Post must have content' });
     }
 
-    // Image block validations
     validateImageBlocks(state.document, errs);
 
     return errs;
@@ -64,7 +59,6 @@ function validateImageBlocks(document: BlockDocument, errors: PublishValidationE
     if (block.type !== 'image') continue;
     const img = block as ImageBlock;
 
-    // Required: alt text
     if (!img.altText) {
       errors.push({
         field: `block:${block.id}:altText`,
@@ -72,7 +66,6 @@ function validateImageBlocks(document: BlockDocument, errors: PublishValidationE
       });
     }
 
-    // Oversized image check
     if (img.width && img.width > MAX_IMAGE_DIMENSION) {
       errors.push({
         field: `block:${block.id}:width`,
@@ -87,7 +80,6 @@ function validateImageBlocks(document: BlockDocument, errors: PublishValidationE
       });
     }
 
-    // Cloudinary WebP/AVIF enforcement check
     if (img.url && img.url.includes('res.cloudinary.com') && !img.url.includes('f_auto')) {
       errors.push({
         field: `block:${block.id}:format`,
